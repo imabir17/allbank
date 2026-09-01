@@ -97,11 +97,21 @@ export function generateTransactions(data: StatementData): Transaction[] {
 
   const N           = data.numberOfTransactions;
   const minTx       = Math.max(1, data.minTxAmount);
-  const maxTx       = data.maxTxAmount;
-  const lowestBal   = Math.max(0, data.lowestBalance);
-  const highestBal  = data.highestBalance;
+  let maxTx       = data.maxTxAmount;
+  let lowestBal   = Math.max(0, data.lowestBalance);
+  let highestBal  = data.highestBalance;
   const startBal    = data.startBalance;
   const endBal      = data.endBalance;
+
+  // Auto-correct impossible constraints
+  const requiredHighest = Math.max(startBal, endBal);
+  if (highestBal < requiredHighest) highestBal = requiredHighest + (requiredHighest * 0.2);
+  
+  const requiredLowest = Math.min(startBal, endBal);
+  if (lowestBal > requiredLowest) lowestBal = Math.max(0, requiredLowest - (requiredLowest * 0.2));
+  
+  const requiredMaxTx = Math.abs(endBal - startBal) / Math.max(1, N * 0.2);
+  if (maxTx < requiredMaxTx) maxTx = requiredMaxTx * 1.5;
 
   // ── Phase 1: Generate N-1 FREE transactions ───────────────────────────────
   // These are a natural random walk within guardrails.
@@ -283,6 +293,84 @@ export function generateTransactions(data: StatementData): Transaction[] {
       deposit:  step.isDeposit ? amount : 0,
       balance:  runningBalance,
     });
+  }
+
+  // ── Phase 5: Exact Final Balance Matching ─────────────────────────────────
+  let currentError = Math.round((endBal - runningBalance) * 100) / 100;
+  
+  if (Math.abs(currentError) > 0.01) {
+    const adjustableIndices = [];
+    for (let i = 0; i < transactions.length; i++) {
+       const p = transactions[i].particulars;
+       if (!p.includes('VAT') && !p.includes('EXCISE DUTY') && !p.includes('FEE') && !p.includes('INT.PD')) {
+           adjustableIndices.push(i);
+       }
+    }
+    
+    adjustableIndices.sort(() => Math.random() - 0.5);
+
+    for (const idx of adjustableIndices) {
+       if (Math.abs(currentError) < 0.01) break;
+       
+       const tx = transactions[idx];
+       let adjustmentToBalance = 0;
+       let newDeposit = tx.deposit;
+       let newWithdraw = tx.withdraw;
+       
+       if (tx.deposit > 0) {
+          const maxIncrease = maxTx - tx.deposit;
+          const maxDecrease = tx.deposit - minTx;
+          
+          if (currentError > 0) {
+             adjustmentToBalance = Math.min(currentError, maxIncrease);
+          } else {
+             adjustmentToBalance = -Math.min(Math.abs(currentError), maxDecrease);
+          }
+          newDeposit = Math.round((tx.deposit + adjustmentToBalance) * 100) / 100;
+       } else if (tx.withdraw > 0) {
+          const maxIncrease = maxTx - tx.withdraw;
+          const maxDecrease = tx.withdraw - minTx;
+          
+          let withdrawAdjustment = 0;
+          if (currentError < 0) {
+             withdrawAdjustment = Math.min(Math.abs(currentError), maxIncrease);
+             adjustmentToBalance = -withdrawAdjustment;
+          } else {
+             withdrawAdjustment = -Math.min(currentError, maxDecrease);
+             adjustmentToBalance = -withdrawAdjustment;
+          }
+          newWithdraw = Math.round((tx.withdraw + withdrawAdjustment) * 100) / 100;
+       }
+       
+       if (adjustmentToBalance !== 0) {
+          let valid = true;
+          let tempBal = startBal;
+          
+          for (let k = 0; k < transactions.length; k++) {
+             const t = transactions[k];
+             const c = (k === idx) ? newDeposit : t.deposit;
+             const d = (k === idx) ? newWithdraw : t.withdraw;
+             tempBal = Math.round((tempBal + c - d) * 100) / 100;
+             if (tempBal < lowestBal || tempBal > highestBal) {
+                valid = false;
+                break;
+             }
+          }
+          
+          if (valid) {
+             tx.deposit = newDeposit;
+             tx.withdraw = newWithdraw;
+             currentError = Math.round((currentError - adjustmentToBalance) * 100) / 100;
+          }
+       }
+    }
+    
+    let finalBal = startBal;
+    for (let i = 0; i < transactions.length; i++) {
+       const tx = transactions[i];
+       finalBal = Math.round((finalBal + tx.deposit - tx.withdraw) * 100) / 100;
+       tx.balance = finalBal;
+    }
   }
 
   return transactions;

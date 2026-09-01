@@ -1,12 +1,5 @@
 import { StatementData, Transaction } from '../types/abTypes';
 import { addDays, differenceInDays, format, subDays } from 'date-fns';
-import { RANDOM_NAMES } from './constants';
-
-const FEE_DESCRIPTIONS = [
-  'Cheque Book Fee, Cheque Book Fee',
-  'VAT',
-  'AMF AMF & VAT',
-];
 
 const REF_CHARS = '0123456789';
 
@@ -51,10 +44,6 @@ function randInt(min: number, max: number): number {
   return Math.floor(Math.random() * (max - min + 1)) + min;
 }
 
-function pick<T>(arr: T[]): T {
-  return arr[randInt(0, arr.length - 1)];
-}
-
 export function generateAbTransactions(data: StatementData): Transaction[] {
   const start    = new Date(data.startDate);
   const end      = new Date(data.endDate);
@@ -62,23 +51,33 @@ export function generateAbTransactions(data: StatementData): Transaction[] {
 
   const N           = data.numberOfTransactions;
   const minTx       = Math.max(1, data.minTxAmount);
-  const maxTx       = data.maxTxAmount;
-  const lowestBal   = Math.max(0, data.lowestBalance);
-  const highestBal  = data.highestBalance;
+  let maxTx       = data.maxTxAmount;
+  let lowestBal   = Math.max(0, data.lowestBalance);
+  let highestBal  = data.highestBalance;
   const startBal    = data.startBalance;
   const endBal      = data.endBalance;
 
-  type RawStep = { isDeposit: boolean; amount: number; isFee: boolean };
+  // Auto-correct impossible constraints
+  const requiredHighest = Math.max(startBal, endBal);
+  if (highestBal < requiredHighest) highestBal = requiredHighest + (requiredHighest * 0.2);
+  
+  const requiredLowest = Math.min(startBal, endBal);
+  if (lowestBal > requiredLowest) lowestBal = Math.max(0, requiredLowest - (requiredLowest * 0.2));
+  
+  const requiredMaxTx = Math.abs(endBal - startBal) / Math.max(1, N * 0.2);
+  if (maxTx < requiredMaxTx) maxTx = requiredMaxTx * 1.5;
+
+  type RawStep = { isDeposit: boolean; amount: number; isFee: boolean; isInterestMarker?: boolean };
   const steps: RawStep[] = [];
   let balance = startBal;
 
-  const feeSlotsCount = Math.max(1, Math.floor(N * 0.08));
+  const feeSlotsCount = Math.max(1, Math.floor(N * 0.04));
   const feeIndices = new Set<number>();
   while (feeIndices.size < feeSlotsCount) {
-    feeIndices.add(randInt(1, N - 1));
+    feeIndices.add(randInt(0, N - 2));
   }
 
-  for (let i = 1; i < N; i++) { // Start from 1 because index 0 is "Credit Balance"
+  for (let i = 0; i < N; i++) {
     const isFee = feeIndices.has(i);
 
     if (isFee) {
@@ -164,6 +163,22 @@ export function generateAbTransactions(data: StatementData): Transaction[] {
   });
   
   const indexed = steps.map((step, i) => ({ step, date: rawDates[i] }));
+  
+  // Inject Interest/Tax markers for June 30 and Dec 31
+  const interestDates: Date[] = [];
+  for (let y = start.getFullYear(); y <= end.getFullYear(); y++) {
+    const june30 = new Date(y, 5, 30);
+    const dec31 = new Date(y, 11, 31);
+    if (june30 >= start && june30 <= end) interestDates.push(june30);
+    if (dec31 >= start && dec31 <= end) interestDates.push(dec31);
+  }
+  for (const d of interestDates) {
+    indexed.push({
+      step: { isDeposit: true, amount: 0, isFee: false, isInterestMarker: true },
+      date: d
+    });
+  }
+
   indexed.sort((a, b) => a.date.getTime() - b.date.getTime());
 
   const transactions: Transaction[] = [];
@@ -181,70 +196,93 @@ export function generateAbTransactions(data: StatementData): Transaction[] {
     balance: startBal,
   });
 
+  let idCounter = 1;
+
   for (let i = 0; i < indexed.length; i++) {
     const { step, date } = indexed[i];
-    let { isDeposit, amount, isFee } = step;
+    let { isDeposit, amount, isFee, isInterestMarker } = step;
+
+    if (isInterestMarker) {
+       const interestAmount = Math.max(0, Math.round(runningBalance * 0.01 * 100) / 100);
+       if (interestAmount > 0) {
+           runningBalance = Math.round((runningBalance + interestAmount) * 100) / 100;
+           transactions.push({
+             id: (idCounter++).toString(),
+             postDate: format(date, 'ddMMMyy').toUpperCase(),
+             valueDate: '',
+             refNo: '',
+             particulars: 'Profit',
+             debit: 0,
+             credit: interestAmount,
+             balance: runningBalance,
+           });
+           
+           // Deduct 10% Tax on Profit
+           const taxAmount = Math.round(interestAmount * 0.10 * 100) / 100;
+           runningBalance = Math.round((runningBalance - taxAmount) * 100) / 100;
+           transactions.push({
+             id: (idCounter++).toString(),
+             postDate: format(date, 'ddMMMyy').toUpperCase(),
+             valueDate: '',
+             refNo: '',
+             particulars: 'Tax on Profit',
+             debit: taxAmount,
+             credit: 0,
+             balance: runningBalance,
+           });
+       }
+       continue;
+    }
 
     let particulars = '';
     let refNo = '';
     let valueDate = '';
 
     const isWeekend = date.getDay() === 5 || date.getDay() === 6;
+    let createNpsbFee = false;
+    let npsbRef = '';
 
     if (isFee) {
       const typeRoll = Math.random();
       if (typeRoll < 0.3) {
         particulars = 'VAT';
         amount = 24.00;
-      } else if (typeRoll < 0.5) {
+      } else if (typeRoll < 0.6) {
         particulars = 'AMF AMF & VAT';
         amount = 115.00;
-      } else if (typeRoll < 0.7) {
+      } else {
         particulars = 'Cheque Book Fee, Cheque Book Fee';
         amount = 160.00;
-      } else {
-        refNo = randomNpsbRef();
-        particulars = `FEE ${refNo}, NPSB Charge VAT IBFT`;
-        amount = 10.00;
       }
     } else if (isDeposit) {
       const typeRoll = Math.random();
-      if (typeRoll < 0.15) {
-        particulars = 'Profit';
-        amount = Math.round(amount / 100) + Math.random() * 50;
-      } else if (typeRoll < 0.3 && !isWeekend) {
+      if (typeRoll < 0.3 && !isWeekend) {
         particulars = 'CSH';
-      } else if (typeRoll < 0.6) {
-        refNo = `TM${randInt(100000, 999999)}${randInt(100000, 999999)}C`;
+      } else if (typeRoll < 0.5 && !isWeekend) {
+        particulars = 'CSH, self';
+      } else if (typeRoll < 0.6 && !isWeekend) {
+        particulars = 'CSH islp';
+      } else if (typeRoll < 0.75) {
         particulars = `MFS Deposit, Transfer Money, 01${randInt(7, 9)}${randInt(10000000, 99999999)} to\n${data.accountNo}`;
-        valueDate = format(subDays(date, 2), 'ddMMMyy').toUpperCase();
-      } else if (typeRoll < 0.8) {
+      } else if (typeRoll < 0.9) {
         refNo = randomEftRef();
-        particulars = 'Inward EFT Received, PIF-TT No 100526022104 of\nStandard, FOREIGEN REMIT~AC-2075071, BK-\nSTANDARD BANK ~BR-REMITTANCE';
+        particulars = `Inward EFT Received, PIF-TT No ${randInt(100000000000, 999999999999)} of\nStandard, FOREIGEN REMIT~AC-2075071, BK-\nSTANDARD BANK ~BR-REMITTANCE`;
       } else {
-        refNo = randomEftRef();
-        particulars = 'Inward EFT Received, PIF-TT No 100526023314 of Cash\nInce, FOREIGEN REMIT~AC-2075071, BK-STANDARD\nBANK ~BR-REMITTANCE';
+        particulars = 'TFR, ' + randomTfrRef().replace('TFR, ', '') + '\nIssuer Fund transasfer, BRBL ONLINE BANKING, BD';
       }
     } else {
       const typeRoll = Math.random();
-      if (typeRoll < 0.25 && !isWeekend) {
-        particulars = 'CSH, self';
-      } else if (typeRoll < 0.6) {
+      if (typeRoll < 0.7) {
         refNo = randomNpsbRef();
         particulars = `NPSB Transfer, ftr, FTR from ${data.accountNo}`;
+        createNpsbFee = true;
+        npsbRef = refNo;
         if (Math.random() < 0.3) {
           valueDate = format(subDays(date, 2), 'ddMMMyy').toUpperCase();
         }
-      } else if (typeRoll < 0.8) {
-        particulars = 'TFR, ' + randomTfrRef().replace('TFR, ', '') + '\nIssuer Fund transasfer, DUTCH-BANGLA BANK LTD.,\nBD';
-        if (Math.random() < 0.5) valueDate = format(subDays(date, 1), 'ddMMMyy').toUpperCase();
       } else {
         particulars = `CHQ ${randInt(1000000, 9999999)}`;
       }
-    }
-
-    if (particulars === 'Profit') {
-      amount = Math.round(amount * 100) / 100;
     }
 
     runningBalance = isDeposit
@@ -252,7 +290,7 @@ export function generateAbTransactions(data: StatementData): Transaction[] {
       : Math.round((runningBalance - amount) * 100) / 100;
 
     transactions.push({
-      id: (i + 1).toString(),
+      id: (idCounter++).toString(),
       postDate: format(date, 'ddMMMyy').toUpperCase(),
       valueDate: valueDate,
       refNo: refNo,
@@ -261,6 +299,98 @@ export function generateAbTransactions(data: StatementData): Transaction[] {
       credit: isDeposit ? amount : 0,
       balance: runningBalance,
     });
+
+    if (createNpsbFee) {
+        runningBalance = Math.round((runningBalance - 10.00) * 100) / 100;
+        transactions.push({
+          id: (idCounter++).toString(),
+          postDate: format(date, 'ddMMMyy').toUpperCase(),
+          valueDate: valueDate,
+          refNo: '',
+          particulars: `FEE ${npsbRef}, NPSB Charge VAT IBFT`,
+          debit: 10.00,
+          credit: 0,
+          balance: runningBalance,
+        });
+    }
+  }
+
+  // ── Phase 5: Exact Final Balance Matching ─────────────────────────────────
+  let currentError = Math.round((endBal - runningBalance) * 100) / 100;
+  
+  if (Math.abs(currentError) > 0.01) {
+    const adjustableIndices = [];
+    for (let i = 1; i < transactions.length; i++) {
+       const p = transactions[i].particulars;
+       if (!p.includes('VAT') && !p.includes('AMF') && !p.includes('Cheque Book Fee') && !p.includes('FEE') && !p.includes('Profit')) {
+           adjustableIndices.push(i);
+       }
+    }
+    
+    adjustableIndices.sort(() => Math.random() - 0.5);
+
+    for (const idx of adjustableIndices) {
+       if (Math.abs(currentError) < 0.01) break;
+       
+       const tx = transactions[idx];
+       let adjustmentToBalance = 0;
+       let newCredit = tx.credit;
+       let newDebit = tx.debit;
+       
+       if (tx.credit > 0) {
+          const maxIncrease = maxTx - tx.credit;
+          const maxDecrease = tx.credit - minTx;
+          
+          if (currentError > 0) {
+             adjustmentToBalance = Math.min(currentError, maxIncrease);
+          } else {
+             adjustmentToBalance = -Math.min(Math.abs(currentError), maxDecrease);
+          }
+          newCredit = Math.round((tx.credit + adjustmentToBalance) * 100) / 100;
+       } else if (tx.debit > 0) {
+          const maxIncrease = maxTx - tx.debit;
+          const maxDecrease = tx.debit - minTx;
+          
+          let debitAdjustment = 0;
+          if (currentError < 0) {
+             debitAdjustment = Math.min(Math.abs(currentError), maxIncrease);
+             adjustmentToBalance = -debitAdjustment;
+          } else {
+             debitAdjustment = -Math.min(currentError, maxDecrease);
+             adjustmentToBalance = -debitAdjustment;
+          }
+          newDebit = Math.round((tx.debit + debitAdjustment) * 100) / 100;
+       }
+       
+       if (adjustmentToBalance !== 0) {
+          let valid = true;
+          let tempBal = transactions[0].balance;
+          
+          for (let k = 1; k < transactions.length; k++) {
+             const t = transactions[k];
+             const c = (k === idx) ? newCredit : t.credit;
+             const d = (k === idx) ? newDebit : t.debit;
+             tempBal = Math.round((tempBal + c - d) * 100) / 100;
+             if (tempBal < lowestBal || tempBal > highestBal) {
+                valid = false;
+                break;
+             }
+          }
+          
+          if (valid) {
+             tx.credit = newCredit;
+             tx.debit = newDebit;
+             currentError = Math.round((currentError - adjustmentToBalance) * 100) / 100;
+          }
+       }
+    }
+    
+    let finalBal = transactions[0].balance;
+    for (let i = 1; i < transactions.length; i++) {
+       const tx = transactions[i];
+       finalBal = Math.round((finalBal + tx.credit - tx.debit) * 100) / 100;
+       tx.balance = finalBal;
+    }
   }
 
   return transactions;

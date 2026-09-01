@@ -52,11 +52,21 @@ export function generateTransactions(data: StatementData): Transaction[] {
 
   const N           = data.numberOfTransactions;
   const minTx       = Math.max(1, data.minTxAmount);
-  const maxTx       = data.maxTxAmount;
-  const lowestBal   = Math.max(0, data.lowestBalance);
-  const highestBal  = data.highestBalance;
+  let maxTx       = data.maxTxAmount;
+  let lowestBal   = Math.max(0, data.lowestBalance);
+  let highestBal  = data.highestBalance;
   const startBal    = data.startBalance;
   const endBal      = data.endBalance;
+
+  // Auto-correct impossible constraints
+  const requiredHighest = Math.max(startBal, endBal);
+  if (highestBal < requiredHighest) highestBal = requiredHighest + (requiredHighest * 0.2);
+  
+  const requiredLowest = Math.min(startBal, endBal);
+  if (lowestBal > requiredLowest) lowestBal = Math.max(0, requiredLowest - (requiredLowest * 0.2));
+  
+  const requiredMaxTx = Math.abs(endBal - startBal) / Math.max(1, N * 0.2);
+  if (maxTx < requiredMaxTx) maxTx = requiredMaxTx * 1.5;
 
   type RawStep = { isDeposit: boolean; amount: number; isFee: boolean; isInterestMarker?: boolean };
   const steps: RawStep[] = [];
