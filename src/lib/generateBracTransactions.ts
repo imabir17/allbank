@@ -371,6 +371,21 @@ export function generateTransactions(data: StatementData): Transaction[] {
        finalBal = Math.round((finalBal + tx.deposit - tx.withdraw) * 100) / 100;
        tx.balance = finalBal;
     }
+
+    const residual = Math.round((endBal - finalBal) * 100) / 100;
+    if (Math.abs(residual) >= 0.01 && transactions.length > 0) {
+      const lastTx = transactions[transactions.length - 1];
+      if (lastTx.deposit > 0) {
+        lastTx.deposit = Math.round((lastTx.deposit + residual) * 100) / 100;
+      } else {
+        lastTx.withdraw = Math.round((lastTx.withdraw - residual) * 100) / 100;
+      }
+      let b = startBal;
+      for (const tx of transactions) {
+        b = Math.round((b + tx.deposit - tx.withdraw) * 100) / 100;
+        tx.balance = b;
+      }
+    }
   }
 
   return transactions;

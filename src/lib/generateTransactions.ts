@@ -197,7 +197,6 @@ export function generateTransactions(data: StatementData): Transaction[] {
   let lastTransactionType = '';
   let lastDescription = '';
   
-  let lastCreditInterestDate = start;
   let hasExciseDutyThisYear = -1;
   let hasSmsFeeThisYear = -1;
   let hasJuneFeeThisYear = -1;
@@ -205,7 +204,8 @@ export function generateTransactions(data: StatementData): Transaction[] {
 
   for (let i = 0; i < indexed.length; i++) {
     const { step, date } = indexed[i];
-    let { isDeposit, amount, isFee, isInterestMarker } = step;
+    const { isDeposit, isFee, isInterestMarker } = step;
+    let { amount } = step;
 
     if (isInterestMarker) {
        // Calculate interest: 2% p.a. => ~1% half-yearly applied on current running balance
@@ -502,6 +502,21 @@ export function generateTransactions(data: StatementData): Transaction[] {
     for (const tx of transactions) {
        finalBal = Math.round((finalBal + tx.credit - tx.debit) * 100) / 100;
        tx.balance = finalBal;
+    }
+
+    const residual = Math.round((endBal - finalBal) * 100) / 100;
+    if (Math.abs(residual) >= 0.01 && transactions.length > 0) {
+      const lastTx = transactions[transactions.length - 1];
+      if (lastTx.credit > 0) {
+        lastTx.credit = Math.round((lastTx.credit + residual) * 100) / 100;
+      } else {
+        lastTx.debit = Math.round((lastTx.debit - residual) * 100) / 100;
+      }
+      let b = startBal;
+      for (const tx of transactions) {
+        b = Math.round((b + tx.credit - tx.debit) * 100) / 100;
+        tx.balance = b;
+      }
     }
   }
 

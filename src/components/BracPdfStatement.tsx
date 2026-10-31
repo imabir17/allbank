@@ -68,8 +68,8 @@ const styles = StyleSheet.create({
   tableHeader: {
     flexDirection: 'row',
     borderBottomWidth: 1,
-    borderBottomColor: '#999',
-    borderBottomStyle: 'dashed',
+    borderBottomColor: '#000',
+    borderBottomStyle: 'solid',
     paddingBottom: 4,
     marginBottom: 4,
     fontFamily: 'Courier-Bold',
@@ -151,8 +151,8 @@ export function BracPdfStatement({ data, transactions }: PdfStatementProps) {
     return parts.join('.');
   };
 
-  const totalWithdraw = transactions.reduce((sum, tx) => sum + tx.withdraw, 0);
-  const totalDeposit = transactions.reduce((sum, tx) => sum + tx.deposit, 0);
+  const totalWithdraw = transactions.reduce((sum, tx) => sum + Math.round((tx.withdraw || 0) * 100), 0) / 100;
+  const totalDeposit = transactions.reduce((sum, tx) => sum + Math.round((tx.deposit || 0) * 100), 0) / 100;
 
   const formattedStartDate = new Date(data.startDate)
     .toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' })

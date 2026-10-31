@@ -103,8 +103,8 @@ export function PdfStatement({ data, transactions }: PdfStatementProps) {
   const formattedStartDate = format(new Date(data.startDate), 'dd MMM yyyy').toUpperCase().replace(/\./g, '');
   const formattedEndDate = format(new Date(data.endDate), 'dd MMM yyyy').toUpperCase().replace(/\./g, '');
 
-  const totalDebit = transactions.reduce((sum, tx) => sum + tx.debit, 0);
-  const totalCredit = transactions.reduce((sum, tx) => sum + tx.credit, 0);
+  const totalDebit = transactions.reduce((sum, tx) => sum + Math.round((tx.debit || 0) * 100), 0) / 100;
+  const totalCredit = transactions.reduce((sum, tx) => sum + Math.round((tx.credit || 0) * 100), 0) / 100;
   
   const finalBalance = transactions.length > 0 ? transactions[transactions.length - 1].balance : data.startBalance;
 

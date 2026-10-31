@@ -178,17 +178,18 @@ const formatBalance = (amount: number) => {
 
 export function AbPdfStatement({ data, transactions }: { data: StatementData; transactions: Transaction[] }) {
   
-  const totalDebit = transactions.reduce((sum, tx) => sum + tx.debit, 0);
-  const totalCredit = transactions.reduce((sum, tx) => sum + tx.credit, 0);
+  const totalDebit = transactions.reduce((sum, tx) => sum + Math.round((tx.debit || 0) * 100), 0) / 100;
+  const totalCredit = transactions.reduce((sum, tx) => sum + Math.round((tx.credit || 0) * 100), 0) / 100;
   const finalBalance = transactions.length > 0 ? transactions[transactions.length - 1].balance : data.startBalance;
 
   return (
     <Document>
-      <Page size="LETTER" style={styles.page}>
+      <Page size="A4" style={styles.page}>
         
         {/* HEADER TOP (Logo + Title) */}
         <View style={styles.headerTopContainer} fixed>
           <View style={styles.logoArea}>
+            {/* eslint-disable-next-line jsx-a11y/alt-text */}
             <Image src="/ab-logo.png" style={{ width: 45, height: 45 }} />
             <Text style={styles.logoText}>AB Bank</Text>
           </View>

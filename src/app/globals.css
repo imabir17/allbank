@@ -1,5 +1,10 @@
 @import "tailwindcss";
 
+@page {
+  size: A4 portrait;
+  margin: 0;
+}
+
 :root {
   --background: #ffffff;
   --foreground: #171717;

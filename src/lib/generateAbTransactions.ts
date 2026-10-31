@@ -15,9 +15,9 @@ function randomTfrRef(): string {
   // Format: TFR, 518781 00600009 614711518780 052322, IBFT
   let part1 = '';
   for (let i=0; i<6; i++) part1 += REF_CHARS.charAt(Math.floor(Math.random() * REF_CHARS.length));
-  let part2 = '00600009';
-  let part3 = '61' + Math.floor(Math.random() * 10000000000).toString().padStart(10, '0');
-  let part4 = Math.floor(Math.random() * 1000000).toString().padStart(6, '0');
+  const part2 = '00600009';
+  const part3 = '61' + Math.floor(Math.random() * 10000000000).toString().padStart(10, '0');
+  const part4 = Math.floor(Math.random() * 1000000).toString().padStart(6, '0');
   
   return `TFR, ${part1} ${part2} ${part3} ${part4}, IBFT`;
 }
@@ -200,7 +200,8 @@ export function generateAbTransactions(data: StatementData): Transaction[] {
 
   for (let i = 0; i < indexed.length; i++) {
     const { step, date } = indexed[i];
-    let { isDeposit, amount, isFee, isInterestMarker } = step;
+    const { isDeposit, isFee, isInterestMarker } = step;
+    let { amount } = step;
 
     if (isInterestMarker) {
        const interestAmount = Math.max(0, Math.round(runningBalance * 0.01 * 100) / 100);
@@ -390,6 +391,22 @@ export function generateAbTransactions(data: StatementData): Transaction[] {
        const tx = transactions[i];
        finalBal = Math.round((finalBal + tx.credit - tx.debit) * 100) / 100;
        tx.balance = finalBal;
+    }
+
+    const residual = Math.round((endBal - finalBal) * 100) / 100;
+    if (Math.abs(residual) >= 0.01 && transactions.length > 1) {
+      const lastTx = transactions[transactions.length - 1];
+      if (lastTx.credit > 0) {
+        lastTx.credit = Math.round((lastTx.credit + residual) * 100) / 100;
+      } else {
+        lastTx.debit = Math.round((lastTx.debit - residual) * 100) / 100;
+      }
+      let b = transactions[0].balance;
+      for (let i = 1; i < transactions.length; i++) {
+        const tx = transactions[i];
+        b = Math.round((b + tx.credit - tx.debit) * 100) / 100;
+        tx.balance = b;
+      }
     }
   }
 

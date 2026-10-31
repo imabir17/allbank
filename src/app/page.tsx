@@ -20,8 +20,14 @@ import { AbStatementPreview } from '@/components/AbStatementPreview';
 import { StatementData as AbStatementData, Transaction as AbTransaction } from '@/types/abTypes';
 import { generateAbTransactions } from '@/lib/generateAbTransactions';
 
+// Standard Islami Bank
+import { StandardDashboardForm } from '@/components/StandardDashboardForm';
+import { StandardStatementPreview } from '@/components/StandardStatementPreview';
+import { StatementData as StandardStatementData, Transaction as StandardTransaction } from '@/types/standardTypes';
+import { generateStandardTransactions } from '@/lib/generateStandardTransactions';
+
 export default function Home() {
-  const [selectedBank, setSelectedBank] = useState<'janata' | 'brac' | 'ab'>('janata');
+  const [selectedBank, setSelectedBank] = useState<'janata' | 'brac' | 'ab' | 'standard'>('janata');
 
   // Janata State
   const [mode, setMode] = useState<'edit' | 'preview'>('edit');
@@ -108,6 +114,40 @@ export default function Home() {
     minTxAmount: 500,
   });
 
+  // Standard Islami Bank State
+  const [standardMode, setStandardMode] = useState<'edit' | 'preview'>('edit');
+  const [standardTransactions, setStandardTransactions] = useState<StandardTransaction[]>([]);
+  const [standardData, setStandardData] = useState<StandardStatementData>({
+    accountTitle: 'MD SAGIR AHMED',
+    addressLine1: 'RATHURA, KALIGANL',
+    addressLine2: 'ULUKHOLA - 1720, GAZIPUR',
+    contactNo: '',
+    accountStatus: 'Active',
+    accountNo: '01731974158',
+    openDate: '10/12/2018',
+    accountType: 'S04 - Mudaraba Savings  - Premium',
+    customerId: '00217749',
+    currency: 'BDT - BANGLADESH TAKA',
+    branchName: 'TONGI BRANCH',
+    branchAddressLine1: 'Amin Bhaban',
+    branchAddressLine2: '12 Cherag Ali Market, Tongi',
+    branchPhone: '01701221687(M),01701221686(OM)',
+    branchFax: '02-9840217',
+    branchEmail: 'tongi@standardbankbd.com',
+    printingDate: '08/10/2026 11:42:13',
+    cardNumber: '921001000204353',
+    chequePrefix: 'SBA3579030',
+    startDate: '2025-09-01',
+    endDate: '2026-10-08',
+    startBalance: 984256.25,
+    endBalance: 2784526.19,
+    numberOfTransactions: 40,
+    highestBalance: 3000000,
+    lowestBalance: 500000,
+    maxTxAmount: 200000,
+    minTxAmount: 1000,
+  });
+
   const handleGenerateJanata = () => {
     const txs = generateTransactions(data);
     setTransactions(txs);
@@ -126,21 +166,28 @@ export default function Home() {
     setAbMode('preview');
   };
 
+  const handleGenerateStandard = () => {
+    const txs = generateStandardTransactions(standardData);
+    setStandardTransactions(txs);
+    setStandardMode('preview');
+  };
+
   const isPreviewMode = 
     (selectedBank === 'janata' && mode === 'preview') || 
     (selectedBank === 'brac' && bracMode === 'preview') ||
-    (selectedBank === 'ab' && abMode === 'preview');
+    (selectedBank === 'ab' && abMode === 'preview') ||
+    (selectedBank === 'standard' && standardMode === 'preview');
 
   return (
     <main className="min-h-screen bg-black print:bg-white text-white">
       
       {!isPreviewMode && (
-        <div className="pt-12 flex justify-center space-x-6">
+        <div className="pt-12 flex flex-wrap justify-center gap-4 px-4">
           <button
             onClick={() => setSelectedBank('janata')}
-            className={`px-8 py-3 font-bold rounded-lg shadow-lg transform transition duration-200 ${
+            className={`px-8 py-3 font-bold rounded-lg shadow-lg transform transition duration-200 cursor-pointer ${
               selectedBank === 'janata'
-                ? 'bg-green-600 text-white scale-105'
+                ? 'bg-green-600 text-white scale-105 ring-2 ring-green-400'
                 : 'bg-gray-800 text-gray-400 hover:bg-gray-700'
             }`}
           >
@@ -148,9 +195,9 @@ export default function Home() {
           </button>
           <button
             onClick={() => setSelectedBank('brac')}
-            className={`px-8 py-3 font-bold rounded-lg shadow-lg transform transition duration-200 ${
+            className={`px-8 py-3 font-bold rounded-lg shadow-lg transform transition duration-200 cursor-pointer ${
               selectedBank === 'brac'
-                ? 'bg-blue-600 text-white scale-105'
+                ? 'bg-blue-600 text-white scale-105 ring-2 ring-blue-400'
                 : 'bg-gray-800 text-gray-400 hover:bg-gray-700'
             }`}
           >
@@ -158,13 +205,23 @@ export default function Home() {
           </button>
           <button
             onClick={() => setSelectedBank('ab')}
-            className={`px-8 py-3 font-bold rounded-lg shadow-lg transform transition duration-200 ${
+            className={`px-8 py-3 font-bold rounded-lg shadow-lg transform transition duration-200 cursor-pointer ${
               selectedBank === 'ab'
-                ? 'bg-red-600 text-white scale-105'
+                ? 'bg-red-600 text-white scale-105 ring-2 ring-red-400'
                 : 'bg-gray-800 text-gray-400 hover:bg-gray-700'
             }`}
           >
             AB Bank
+          </button>
+          <button
+            onClick={() => setSelectedBank('standard')}
+            className={`px-8 py-3 font-bold rounded-lg shadow-lg transform transition duration-200 cursor-pointer ${
+              selectedBank === 'standard'
+                ? 'bg-teal-600 text-white scale-105 ring-2 ring-teal-400'
+                : 'bg-gray-800 text-gray-400 hover:bg-gray-700'
+            }`}
+          >
+            Standard Islami Bank
           </button>
         </div>
       )}
@@ -185,13 +242,21 @@ export default function Home() {
         ) : (
           <BracStatementPreview data={bracData} transactions={bracTransactions} onBack={() => setBracMode('edit')} />
         )
-      ) : (
+      ) : selectedBank === 'ab' ? (
         abMode === 'edit' ? (
           <div className="py-8 px-4">
             <AbDashboardForm data={abData} onChange={setAbData} onGenerate={handleGenerateAb} />
           </div>
         ) : (
           <AbStatementPreview data={abData} transactions={abTransactions} onBack={() => setAbMode('edit')} />
+        )
+      ) : (
+        standardMode === 'edit' ? (
+          <div className="py-8 px-4">
+            <StandardDashboardForm data={standardData} onChange={setStandardData} onGenerate={handleGenerateStandard} />
+          </div>
+        ) : (
+          <StandardStatementPreview data={standardData} transactions={standardTransactions} onBack={() => setStandardMode('edit')} />
         )
       )}
     </main>
